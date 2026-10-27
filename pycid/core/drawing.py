@@ -129,7 +129,7 @@ def layered_positions(
     for lv, row in rows.items():
         spread = min((width - 1) / max(len(row) - 1, 1), 1.6) if len(row) > 1 else 1.0
         for i, n in enumerate(row):
-            pos[n] = ((i - (len(row) - 1) / 2) * max(spread, 1.0), -float(lv))
+            pos[n] = ((i - (len(row) - 1) / 2) * max(spread, 1.0) * 1.5, -float(lv))
     return pos
 
 
@@ -191,27 +191,33 @@ def _highlighted(cbn: "CausalBayesianNetwork", highlight: Optional[Iterable[Any]
     return nodes, edges
 
 
-def _passes_through_node(pos: Mapping, u: Any, v: Any, clearance: float = 0.35) -> bool:
-    """True if the straight segment u -> v runs over another node."""
+def _obstruction_side(pos: Mapping, u: Any, v: Any, clearance: float = 0.35) -> int:
+    """0 if the straight segment u -> v is clear; otherwise +1/-1, the side on which to bend it."""
     a, b = np.asarray(pos[u], dtype=float), np.asarray(pos[v], dtype=float)
     ab = b - a
     length2 = float(ab @ ab)
     if length2 == 0:
-        return False
+        return 0
     for w, p in pos.items():
         if w in (u, v):
             continue
-        t = float((np.asarray(p, dtype=float) - a) @ ab) / length2
-        if 0.05 < t < 0.95 and np.linalg.norm(a + t * ab - np.asarray(p, dtype=float)) < clearance:
-            return True
-    return False
+        ap = np.asarray(p, dtype=float) - a
+        t = float(ap @ ab) / length2
+        if 0.05 < t < 0.95 and np.linalg.norm(ap - t * ab) < clearance:
+            cross = ab[0] * ap[1] - ab[1] * ap[0]  # > 0: the node is on the left of u -> v
+            if abs(cross) < 1e-9 * length2:  # node exactly on the line: bend away from the drawing's centre
+                centre = np.mean(np.asarray(list(pos.values()), dtype=float), axis=0)
+                right = np.array([ab[1], -ab[0]])
+                return -1 if float((centre - (a + b) / 2) @ right) > 0 else 1
+            return 1 if cross > 0 else -1  # matplotlib arc3: rad > 0 bends the edge to the right of u -> v
+    return 0
 
 
 def _draw_edges(cbn: Any, pos: Mapping, ax: plt.Axes, kinds: Mapping, sizes: Mapping, hl_edges: Set[Any]) -> None:
     """Edges: dashed into decisions, gently curved when a straight line would run over a node."""
     nodes = list(cbn.nodes)
     for u, v in cbn.edges:
-        skip = _passes_through_node(pos, u, v)
+        side = _obstruction_side(pos, u, v)
         hl = (u, v) in hl_edges
         nx.draw_networkx_edges(
             cbn,
@@ -225,7 +231,7 @@ def _draw_edges(cbn: Any, pos: Mapping, ax: plt.Axes, kinds: Mapping, sizes: Map
             width=3.0 if hl else 1.4,
             edge_color=HIGHLIGHT if hl else EDGE,
             style="dashed" if kinds[v] == "decision" else "solid",
-            connectionstyle="arc3,rad=0.35" if skip else "arc3,rad=0.0",
+            connectionstyle=f"arc3,rad={0.3 * side}",
         )
 
 
@@ -258,6 +264,7 @@ def _draw_text(cbn: Any, pos: Mapping, ax: plt.Axes, text: Mapping, colour: Call
 
 
 def _draw_legend(cbn: Any, ax: plt.Axes, unowned: Set[str]) -> None:
+    width_in = ax.figure.get_size_inches()[0]
     handles = cbn._legend_handles({cbn._get_kind(n) for n in cbn.nodes if n not in unowned})
     if unowned:
         handles += legend_handles([("D", UNOWNED, "unowned utility")])
@@ -266,7 +273,7 @@ def _draw_legend(cbn: Any, ax: plt.Axes, unowned: Set[str]) -> None:
             handles=handles,
             loc="upper center",
             bbox_to_anchor=(0.5, 0.0),
-            ncol=min(len(handles), 6),
+            ncol=max(1, min(len(handles), int(width_in / 1.45))),
             frameon=False,
             fontsize=9,
             handletextpad=0.4,
@@ -322,7 +329,6 @@ def draw_graph(
     ax.set_xlim(min(xs) - 0.75, max(xs) + 0.75)
     ax.set_ylim(min(ys) - 0.65, max(ys) + 0.55)
     if show:
-        plt.tight_layout()
         plt.show()
         return None
     return ax

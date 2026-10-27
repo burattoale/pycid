@@ -6,7 +6,7 @@
 > The public API is unchanged (`import pycid`). See [FORK.md](./FORK.md) for the list of changes.
 >
 > ```shell
-> git clone https://github.com/YOUR-GITHUB-USER/pycid.git
+> git clone https://github.com/burattoale/pycid.git
 > cd pycid
 > python3 -m pip install -e .
 > ```
@@ -33,11 +33,11 @@ a [python virtual environment](https://packaging.python.org/guides/installing-us
 a [conda environment](https://conda.io/projects/conda/en/latest/user-guide/getting-started.html#managing-envs).
 Then install this fork from a clone:
 ```shell
-git clone https://github.com/YOUR-GITHUB-USER/pycid.git
+git clone https://github.com/burattoale/pycid.git
 cd pycid
 python3 -m pip install -e .
 ```
-or directly with `python3 -m pip install git+https://github.com/YOUR-GITHUB-USER/pycid.git`.
+or directly with `python3 -m pip install git+https://github.com/burattoale/pycid.git`.
 (`pip install pycid` installs the original release, which needs Python ≤ 3.10 and pygambit 16.0.2.)
 
 This fork requires python version 3.10 or greater (tested on 3.11 and 3.13).
