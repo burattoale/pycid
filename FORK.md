@@ -21,6 +21,7 @@ The public API is unchanged; all 213 original tests and the six tutorial noteboo
   unique infoset labels, exact rational payoffs and probabilities, children reached by iteration).
   `MACID.get_ne`, `get_ne_in_sg` and `get_spe` work again; solver results match the original tests.
 * `setup.cfg`: unpinned requirements, `python_requires >= 3.10`.
+* `pycid/__init__.py`: silences pgmpy 1.x FutureWarnings about its own internal modules.
 * `tests/test_export.py`: players are no longer indexed by position in pygambit 16.7.
 
 ## Readable drawings
@@ -35,7 +36,7 @@ The public API is unchanged; all 213 original tests and the six tutorial noteboo
   math-typeset labels (`U1` → $U_1$, `rbar01` → $\bar r_{01}$), and a legend;
 * new options: `layout` ("layered", "kamada_kawai", "spring", "circular", a dict or a function),
   `labels`, `highlight` (nodes, edges or whole paths), `unowned` (non-player stakeholders drawn as
-  utilities), `show_cpds`, `legend`, `ax`, `figsize`, `show`; `draw()` now returns the matplotlib Axes;
+  utilities), `show_cpds`, `legend`, `ax`, `figsize`, `show`; with `show=False`, `draw()` returns the matplotlib Axes;
 * the old keyword arguments (`node_color`, `node_shape`, `node_label`, a layout function) and
   `draw_property` still work;
 * tests in `tests/test_drawing.py`.

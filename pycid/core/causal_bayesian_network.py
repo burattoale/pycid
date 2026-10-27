@@ -304,7 +304,7 @@ class CausalBayesianNetwork(BayesianNetwork):
         figsize: Optional[Tuple[float, float]] = None,
         show: bool = True,
         unowned: Iterable[str] = (),
-    ) -> plt.Axes:
+    ) -> Optional[plt.Axes]:
         """Draw the CBN, CID or MACID in a readable, layered style.
 
         Parameters
@@ -325,7 +325,7 @@ class CausalBayesianNetwork(BayesianNetwork):
 
         unowned: ordinary nodes to draw as unowned utilities (e.g. a non-player stakeholder's cost).
 
-        ax, figsize, show: matplotlib controls. Returns the Axes.
+        ax, figsize, show: matplotlib controls. With show=False the Axes is returned for further editing.
         """
         return drawing.draw_graph(
             self,

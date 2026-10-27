@@ -289,7 +289,7 @@ def draw_graph(
     node_size: int = 1100,
     show: bool = True,
     unowned: Iterable[str] = (),
-) -> plt.Axes:
+) -> Optional[plt.Axes]:
     """Draw a CBN, CID or MACID. See ``CausalBayesianNetwork.draw`` for the parameters."""
     unowned = set(unowned)
     kinds = {n: ("utility" if n in unowned else cbn._get_kind(n)) for n in cbn.nodes}
@@ -324,6 +324,7 @@ def draw_graph(
     if show:
         plt.tight_layout()
         plt.show()
+        return None
     return ax
 
 

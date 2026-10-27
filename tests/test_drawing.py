@@ -59,7 +59,7 @@ def test_draw_options() -> None:
         labels={"G": "grid"},
         show_cpds=True,
     )
-    assert ax.get_legend() is not None
+    assert ax is not None and ax.get_legend() is not None
     plt.close("all")
     pos = {n: (i, -i) for i, n in enumerate(macid.nodes)}
     macid.draw(layout=pos, show=False, legend=False)
