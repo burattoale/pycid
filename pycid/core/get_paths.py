@@ -1,8 +1,10 @@
+# Modified in this fork (modern pgmpy/pygambit support, new drawing); see FORK.md.
 from typing import Callable, Iterable, Iterator, List, Optional, Sequence, Set, Tuple
 
 import networkx as nx
 
 from pycid.core.causal_bayesian_network import CausalBayesianNetwork
+from pycid.core.compat import ancestors_of
 
 
 def _dfs_search_paths(start: str, end: str, successors: Callable[[List[str]], Iterable[str]]) -> Iterator[List[str]]:
@@ -37,7 +39,7 @@ def _active_neighbours(cbn: CausalBayesianNetwork, path: Sequence[str], observed
     """Find possibly active extensions of path conditional on the `observed' set of nodes."""
     end_of_path = path[-1]
     last_forward = len(path) > 1 and end_of_path in cbn.get_children(path[-2])
-    possible_colliders: Set[str] = set().union(*[set(cbn._get_ancestors_of(e)) for e in observed])  # type: ignore
+    possible_colliders: Set[str] = set().union(*[set(ancestors_of(cbn, e)) for e in observed])  # type: ignore
 
     # if going upward or at a possible collider, it's possible to continue to a parent
     if not last_forward or end_of_path in possible_colliders:

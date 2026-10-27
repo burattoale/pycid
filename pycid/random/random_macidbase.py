@@ -1,3 +1,4 @@
+# Modified in this fork (modern pgmpy/pygambit support, new drawing); see FORK.md.
 from __future__ import annotations
 
 import random
@@ -11,6 +12,7 @@ from pycid.core.get_paths import find_active_path, get_motif
 from pycid.core.macid_base import AgentLabel, MACIDBase, MechanismGraph
 from pycid.random.random_cpd import RandomCPD
 from pycid.random.random_dag import random_dag
+from pycid.core.compat import ancestors_of
 
 Relationship = Union[TabularCPD, Dict[Outcome, float], Callable[..., Union[Outcome, Dict[Outcome, float]]]]
 
@@ -64,7 +66,7 @@ def random_macidbase(
             num_decs = agent_decisions_num[agent]
             agent_utils = agent_utilities_old_name[agent]
             possible_dec_nodes: Set[str] = (
-                set().union(*[set(dag._get_ancestors_of(node)) for node in agent_utils])
+                set().union(*[set(ancestors_of(dag, node)) for node in agent_utils])
                 - set(agent_utils)
                 - used_nodes  # type: ignore
             )
@@ -146,7 +148,7 @@ def _add_sufficient_recall(mb: MACIDBase, d1: str, d2: str, utility_node: str) -
     somue utilty node descended from d2 until recall is sufficient.
     """
 
-    if d2 in mb._get_ancestors_of(d1):
+    if d2 in ancestors_of(mb, d1):
         raise ValueError("{} is an ancestor of {}".format(d2, d1))
 
     mg = MechanismGraph(mb)
@@ -157,7 +159,7 @@ def _add_sufficient_recall(mb: MACIDBase, d1: str, d2: str, utility_node: str) -
         while True:
             idx = random.randrange(1, len(path) - 1)
             if get_motif(mg, path, idx) != "collider":
-                if d2 not in mg._get_ancestors_of(path[idx]):  # to prevent cycles
+                if d2 not in ancestors_of(mg, path[idx]):  # to prevent cycles
                     mb.add_edge(path[idx], d2)
                     mg.add_edge(path[idx], d2)
                     break
@@ -171,7 +173,7 @@ def _add_sufficient_recalls(mb: MACIDBase) -> None:
         for utility_node in mb.agent_utilities[agent]:
             for i, dec1 in enumerate(decisions):
                 for dec2 in decisions[i + 1 :]:
-                    if dec1 in mb._get_ancestors_of(dec2):
+                    if dec1 in ancestors_of(mb, dec2):
                         if utility_node in nx.descendants(mb, dec2):
                             _add_sufficient_recall(mb, dec1, dec2, utility_node)
                     else:

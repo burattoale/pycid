@@ -1,3 +1,4 @@
+# Modified in this fork (modern pgmpy/pygambit support, new drawing); see FORK.md.
 from __future__ import annotations
 
 import itertools
@@ -22,12 +23,12 @@ from typing import (
 )
 from warnings import warn
 
-import matplotlib.cm as cm
 import networkx as nx
 import numpy as np
 from pgmpy.factors.discrete import TabularCPD
 from pgmpy.inference.ExactInference import BeliefPropagation
 
+from pycid.core import drawing
 from pycid.core.causal_bayesian_network import CausalBayesianNetwork, Relationship
 from pycid.core.cpd import DecisionDomain, Outcome, StochasticFunctionCPD
 from pycid.core.relevance_graph import RelevanceGraph
@@ -433,24 +434,37 @@ class MACIDBase(CausalBayesianNetwork):
                 new.make_utility(utility, agent)
         return new
 
+    def _get_kind(self, node: str) -> str:
+        if node in self.decisions:
+            return "decision"
+        if node in self.utilities:
+            return "utility"
+        return super()._get_kind(node)
+
+    def _agent_color(self, agent: AgentLabel) -> str:
+        agents = sorted(self.agents, key=str)
+        return drawing.AGENT_COLORS[agents.index(agent) % len(drawing.AGENT_COLORS)]
+
     def _get_color(self, node: str) -> Union[np.ndarray, str]:
-        """
-        Assign a unique colour to each new agent's decision and utility nodes
-        """
-        agents = list(self.agents)
-        colors = cm.rainbow(np.linspace(0, 1, len(agents)))  # type: ignore
-        try:
-            agent = self.decision_agent[node]
-        except KeyError:
-            try:
-                agent = self.utility_agent[node]
-            except KeyError:
-                agent = None
-        if agent is not None:
-            color: np.ndarray = colors[[agents.index(agent)]]
-            return color
+        """Decisions and utilities coloured by agent (blue/green with a single agent)."""
+        kind = self._get_kind(node)
+        if kind not in ("decision", "utility"):
+            return super()._get_color(node)
+        if len(self.agents) <= 1:
+            return drawing.SINGLE_AGENT[kind]
+        agent = self.decision_agent[node] if kind == "decision" else self.utility_agent[node]
+        return self._agent_color(agent)
+
+    def _legend_handles(self, kinds: Set[str]) -> List[Any]:
+        handles = super()._legend_handles(kinds)
+        if len(self.agents) <= 1:
+            entries = [(m, drawing.SINGLE_AGENT[k], k) for k, m in [("decision", "s"), ("utility", "D")] if k in kinds]
         else:
-            return "lightgray"  # chance node
+            entries = []
+            for agent in sorted(self.agents, key=str):
+                entries.append(("s", self._agent_color(agent), f"agent {agent}"))
+            entries.append(("D", "#B9C2C8", "utility (agent colour)"))
+        return handles + drawing.legend_handles(entries)
 
     def _get_shape(self, node: str) -> str:
         if node in self.decisions:

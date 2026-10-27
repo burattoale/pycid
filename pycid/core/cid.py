@@ -1,3 +1,4 @@
+# Modified in this fork (modern pgmpy/pygambit support, new drawing); see FORK.md.
 from __future__ import annotations
 
 import random
@@ -80,11 +81,3 @@ class CID(MACIDBase):
             for utility in self.agent_utilities[agent]:
                 new.make_utility(utility, agent)
         return new
-
-    def _get_color(self, node: str) -> str:
-        if node in self.decisions:
-            return "lightblue"
-        elif node in self.utilities:
-            return "yellow"
-        else:
-            return "lightgray"

@@ -1,16 +1,22 @@
+# Modified in this fork (modern pgmpy/pygambit support, new drawing); see FORK.md.
 from __future__ import annotations
 
 import collections
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Set, Tuple, Union  # noqa: F401
 
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
 from pgmpy.factors.discrete import TabularCPD
 from pgmpy.inference.ExactInference import BeliefPropagation
-from pgmpy.models import BayesianNetwork
+
+try:  # pgmpy >= 0.1.26 renamed BayesianNetwork to DiscreteBayesianNetwork
+    from pgmpy.models import DiscreteBayesianNetwork as BayesianNetwork
+except ImportError:  # pragma: no cover - older pgmpy
+    from pgmpy.models import BayesianNetwork
 from pgmpy.sampling import BayesianModelSampling
 
+from pycid.core import drawing
 from pycid.core.cpd import ConstantCPD, Outcome, ParentsNotReadyException, StochasticFunctionCPD
 
 Relationship = Union[TabularCPD, Dict[Outcome, float], Callable[..., Union[Outcome, Dict[Outcome, float]]]]
@@ -222,12 +228,8 @@ class CausalBayesianNetwork(BayesianNetwork):
                 [factor.state_names[variable][idx[var_idx]] for var_idx, variable in enumerate(factor.variables)]
             )
             if np.isnan(ev).any():
-                raise RuntimeError(
-                    "query {} | {} generated Nan from idx: {}, prob: {}, \
-                                consider imputing a random decision".format(
-                        variables, context, idx, prob
-                    )
-                )
+                raise RuntimeError("query {} | {} generated Nan from idx: {}, prob: {}, \
+                                consider imputing a random decision".format(variables, context, idx, prob))
         return ev.tolist()  # type: ignore
 
     def sample(self, seed: Optional[int] = None) -> Dict[str, Outcome]:
@@ -251,13 +253,33 @@ class CausalBayesianNetwork(BayesianNetwork):
             model_copy.model[v] = self.model[v].copy() if hasattr(self.model[v], "copy") else self.model[v]
         return model_copy
 
+    def _get_kind(self, node: str) -> str:
+        """'chance' for roots and random nodes; 'deterministic' for a node with parents whose CPD is
+        degenerate (or not specified yet: structure-only graphs show intermediate nodes in grey)."""
+        if not self.get_parents(node):
+            return "chance"
+        try:
+            cpd = self.get_cpds(node)
+        except (ValueError, KeyError):
+            cpd = None
+        if cpd is None:
+            return "deterministic"
+        values = np.asarray(cpd.values).flatten()
+        return "deterministic" if np.all(np.isclose(values, 0) | np.isclose(values, 1)) else "chance"
+
     def _get_color(self, node: str) -> Union[np.ndarray, str]:
-        # all nodes in a CBN are chance nodes
-        return "lightgray"
+        return drawing.DETERMINISTIC if self._get_kind(node) == "deterministic" else drawing.CHANCE
 
     def _get_shape(self, node: str) -> str:
-        # all nodes in a CBN are chance nodes
         return "o"
+
+    def _legend_handles(self, kinds: Set[str]) -> List[Any]:
+        entries = []
+        if "chance" in kinds:
+            entries.append(("o", drawing.CHANCE, "chance"))
+        if "deterministic" in kinds:
+            entries.append(("o", drawing.DETERMINISTIC, "deterministic"))
+        return drawing.legend_handles(entries)
 
     def _get_label(self, node: str) -> str:
         cpd = self.get_cpds(node)
@@ -273,34 +295,53 @@ class CausalBayesianNetwork(BayesianNetwork):
         node_color: Optional[Callable[[str], Union[str, np.ndarray]]] = None,
         node_shape: Optional[Callable[[str], str]] = None,
         node_label: Optional[Callable[[str], str]] = None,
-        layout: Optional[Callable[[Any], Dict[Any, Any]]] = None,
-    ) -> None:
+        layout: Union[None, str, Callable[[Any], Dict[Any, Any]], Mapping[Any, Tuple[float, float]]] = None,
+        labels: Optional[Mapping[str, str]] = None,
+        highlight: Optional[Iterable[Any]] = None,
+        show_cpds: bool = False,
+        legend: bool = True,
+        ax: Optional[plt.Axes] = None,
+        figsize: Optional[Tuple[float, float]] = None,
+        show: bool = True,
+        unowned: Iterable[str] = (),
+    ) -> plt.Axes:
+        """Draw the CBN, CID or MACID in a readable, layered style.
+
+        Parameters
+        ----------
+        node_color, node_shape, node_label: optional functions node -> colour / marker / text.
+
+        layout: "layered" (default: causes above effects, utilities at the bottom),
+            "kamada_kawai", "spring", "circular", a dict node -> (x, y), or a function graph -> dict.
+
+        labels: text to show inside nodes, e.g. {"rbar01": "$\\bar r_{01}$"}. By default names are
+            typeset as math (U1 -> U_1).
+
+        highlight: nodes, edges (u, v) or paths [n0, n1, ...] to emphasise.
+
+        show_cpds: also print each CPD's short description under its node.
+
+        legend: show a legend of node kinds (and agents for a MACID).
+
+        unowned: ordinary nodes to draw as unowned utilities (e.g. a non-player stakeholder's cost).
+
+        ax, figsize, show: matplotlib controls. Returns the Axes.
         """
-        Draw the CBN, CID, or MACID.
-        """
-        color = node_color if node_color else self._get_color
-        shape = node_shape if node_shape else self._get_shape
-        label = node_label if node_label else self._get_label
-        layout = layout(self) if layout else nx.kamada_kawai_layout(self)  # type: ignore
-        label_dict = {node: label(node) for node in self.nodes}
-        pos_higher = {}
-        for k, v in layout.items():  # type: ignore
-            if v[1] > 0:
-                pos_higher[k] = (v[0] - 0.1, v[1] - 0.2)
-            else:
-                pos_higher[k] = (v[0] - 0.1, v[1] + 0.2)
-        nx.draw_networkx(self, pos=layout, node_size=800, arrowsize=20)
-        nx.draw_networkx_labels(self, pos_higher, label_dict)
-        for node in self.nodes:
-            nx.draw_networkx(
-                self.to_directed().subgraph([node]),
-                pos=layout,
-                node_size=800,
-                arrowsize=20,
-                node_color=color(node),
-                node_shape=shape(node),
-            )
-        plt.show()
+        return drawing.draw_graph(
+            self,
+            node_color=node_color,
+            node_shape=node_shape,
+            node_label=node_label,
+            layout=layout,
+            labels=labels,
+            highlight=highlight,
+            show_cpds=show_cpds,
+            legend=legend,
+            ax=ax,
+            figsize=figsize,
+            show=show,
+            unowned=unowned,
+        )
 
     def draw_property(self, node_property: Callable[[str], bool], color: str = "red") -> None:
         """Draw a CBN, CID, or MACID with the nodes satisfying node_property highlighted"""

@@ -1,3 +1,4 @@
+# Modified in this fork (modern pgmpy/pygambit support, new drawing); see FORK.md.
 import sys
 import unittest
 
@@ -12,9 +13,10 @@ class TestExport(unittest.TestCase):
     def test_macid_to_efg(self) -> None:
         macid = taxi_competition()
         game, _ = macid_to_efg(macid)
-        self.assertEqual(len(game.players), 2)
-        self.assertEqual(len(game.players[0].strategies), 2)
-        self.assertEqual(len(game.players[1].strategies), 4)
+        players = list(game.players)  # pygambit >= 16.7: players are indexed by label, not position
+        self.assertEqual(len(players), 2)
+        self.assertEqual(len(players[0].strategies), 2)
+        self.assertEqual(len(players[1].strategies), 4)
         self.assertEqual(len(game.actions), 6)
         self.assertEqual(len(game.outcomes), 4)
         self.assertEqual(len(game.infosets), 3)

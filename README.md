@@ -1,5 +1,16 @@
 # PyCID: Causal Influence Diagrams library
 
+> **About this fork.** This is a maintained fork of [causalincentives/pycid](https://github.com/causalincentives/pycid)
+> that runs on **modern Python (3.10–3.13), pgmpy ≥ 1.1, pygambit ≥ 16.3, NumPy 2 and NetworkX 3**,
+> and replaces the default plot with a **readable, layered drawing** in the style of influence-diagram papers.
+> The public API is unchanged (`import pycid`). See [FORK.md](./FORK.md) for the list of changes.
+>
+> ```shell
+> git clone https://github.com/YOUR-GITHUB-USER/pycid.git
+> cd pycid
+> python3 -m pip install -e .
+> ```
+
 This package implements causal influence diagrams and methods to analyze them, and is part of the
 [Causal Incentives](https://causalincentives.com) project.
 
@@ -20,12 +31,16 @@ Alternatively, stick to version 0.2.8.
 Create and activate
 a [python virtual environment](https://packaging.python.org/guides/installing-using-pip-and-virtual-environments/#creating-a-virtual-environment) or
 a [conda environment](https://conda.io/projects/conda/en/latest/user-guide/getting-started.html#managing-envs).
-Then install using:
+Then install this fork from a clone:
 ```shell
-python3 -m pip install pycid
+git clone https://github.com/YOUR-GITHUB-USER/pycid.git
+cd pycid
+python3 -m pip install -e .
 ```
+or directly with `python3 -m pip install git+https://github.com/YOUR-GITHUB-USER/pycid.git`.
+(`pip install pycid` installs the original release, which needs Python ≤ 3.10 and pygambit 16.0.2.)
 
-PyCID requires python version 3.8 or greater.
+This fork requires python version 3.10 or greater (tested on 3.11 and 3.13).
 
 ## Basic usage
 
@@ -47,7 +62,8 @@ cid.add_cpds(S = pycid.discrete_uniform([-1, 1]), # S is -1 or 1 with equal prob
              D=[-1, 1], # the permitted action choices for D are -1 and 1
              U=lambda S, D: S * D) # U is the product of S and D (argument names match parent names)
 
-# Draw the result
+# Draw the result: layered, chance nodes orange, decisions squares, utilities diamonds,
+# information edges dashed. Try also cid.draw(highlight=[["S", "U"]]) or layout="kamada_kawai".
 cid.draw()
 ```
 

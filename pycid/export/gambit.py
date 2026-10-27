@@ -1,7 +1,9 @@
+# Modified in this fork (modern pgmpy/pygambit support, new drawing); see FORK.md.
 from __future__ import annotations
 
 import itertools
 from collections import defaultdict
+from fractions import Fraction
 from functools import partial, update_wrapper
 from typing import Any, Callable, Dict, Hashable, Iterable, KeysView, List, Mapping, Optional, Set, Tuple, Union
 from warnings import warn
@@ -80,29 +82,28 @@ def macid_to_efg(
                 # check if this matches an existing infoset
                 if parents_actions_tuple in parents_to_infoset:
                     cur_infoset = parents_to_infoset[parents_actions_tuple]
-                    cur_node.append_move(cur_infoset)
+                    game.append_infoset(cur_node, cur_infoset)
                 # else create a new infoset
                 else:
-                    cur_infoset = cur_node.append_move(player, len(actions))
-                    # label with the node for easy reference
-                    cur_infoset.label = node
+                    game.append_move(cur_node, player, [str(action) for action in actions])
+                    cur_infoset = cur_node.infoset
+                    # label with the node and the observed parent values (labels must be unique per player)
+                    cur_infoset.label = f"{node} | {parents_actions}" if parents_actions else str(node)
                     # add to infosets
                     parents_to_infoset[parents_actions_tuple] = cur_infoset
                 # add state info
                 for action_idx, action in enumerate(actions):
-                    cur_infoset.actions[action_idx].label = str(action)
                     state_info = node_idx_to_state[node_idx].copy()
                     state_info.update({node: action})
                     node_idx_to_state[node_idx + (action_idx,)] = state_info
             else:
                 # otherwise is a chance node
                 factor = macid.query([node], context=parents_actions)
-                move = cur_node.append_move(game.players.chance, factor.cardinality)
-                # add state info
                 actions = macid.model.domain[node]
+                game.append_move(cur_node, game.players.chance, [str(action) for action in actions])
+                game.set_chance_probs(cur_node.infoset, _exact_probabilities(factor.values))
+                # add state info
                 for action_idx, prob in enumerate(factor.values):
-                    move.actions[action_idx].label = str(actions[action_idx])
-                    move.actions[action_idx].prob = pygambit.Decimal(prob)
                     state_info = node_idx_to_state[node_idx].copy()
                     state_info.update({node: actions[action_idx]})
                     node_idx_to_state[node_idx + (action_idx,)] = state_info
@@ -119,15 +120,13 @@ def macid_to_gambit_file(macid: MACIDBase, filename: str = "macid.efg") -> bool:
     - filename: The filename to save the EFG to (default: macid.efg)."""
     game, _ = macid_to_efg(macid)
     with open(filename, "w") as f:
-        f.write(game.write())
+        f.write(game.to_efg())
     print("\nGambit .efg file has been created from the macid")
 
     return True
 
 
-def pygambit_ne_solver(
-    game: pygambit.Game, solver_override: Optional[str] = None
-) -> List[pygambit.lib.libgambit.MixedStrategyProfile]:
+def pygambit_ne_solver(game: pygambit.Game, solver_override: Optional[str] = None) -> List[Any]:
     """Uses pygambit to find the Nash equilibria of the EFG.
     Default solver is enummixed for 2 player games. This finds all NEs.
     For non-2-player games, the default is enumpure which finds all pure NEs.
@@ -148,27 +147,34 @@ def pygambit_ne_solver(
         solver = solver_override
 
     if solver == "enummixed":
-        mixed_strategies = pygambit.nash.enummixed_solve(game, rational=False)
+        result = pygambit.nash.enummixed_solve(game, rational=False)
     elif solver == "enumpure":
-        mixed_strategies = pygambit.nash.enumpure_solve(game)
+        result = pygambit.nash.enumpure_solve(game)
         # if no pure NEs found, try simpdiv if not overridden by user
-        if len(mixed_strategies) == 0 and solver_override is None:
+        if len(result.equilibria) == 0 and solver_override is None:
             warn("No pure NEs found using enumpure. Trying simpdiv.")
-            mixed_strategies = pygambit.nash.simpdiv_solve(game)
+            result = pygambit.nash.simpdiv_solve(game.mixed_strategy_profile(rational=True))
     elif solver == "lcp":
-        mixed_strategies = pygambit.nash.lcp_solve(game, rational=False)
+        result = pygambit.nash.lcp_solve(game, rational=False)
     elif solver == "lp":
-        mixed_strategies = pygambit.nash.lp_solve(game, rational=False)
+        result = pygambit.nash.lp_solve(game, rational=False)
     elif solver == "simpdiv":
-        mixed_strategies = pygambit.nash.simpdiv_solve(game)
+        result = pygambit.nash.simpdiv_solve(game.mixed_strategy_profile(rational=True))
     elif solver == "ipa":
-        mixed_strategies = pygambit.nash.ipa_solve(game)
+        result = pygambit.nash.ipa_solve(game)
     elif solver == "gnm":
-        mixed_strategies = pygambit.nash.gnm_solve(game)
+        result = pygambit.nash.gnm_solve(game)
     else:
         raise ValueError(f"Solver {solver} not recognised")
-    # convert to behavior strategies
-    behavior_strategies = [x.as_behavior() if solver not in ["lp", "lcp"] else x for x in mixed_strategies]
+    # convert to behavior strategies (lp and lcp already return behavior profiles on trees)
+    behavior_strategies = [
+        (
+            x.as_behavior()
+            if isinstance(x, (pygambit.MixedStrategyProfileDouble, pygambit.MixedStrategyProfileRational))
+            else x
+        )
+        for x in result.equilibria
+    ]
 
     return behavior_strategies
 
@@ -176,7 +182,7 @@ def pygambit_ne_solver(
 def behavior_to_cpd(
     macid: MACIDBase,
     parents_to_infoset: Mapping[Tuple[Hashable, Tuple[Tuple[str, Any], ...]], pygambit.Infoset],
-    behavior: pygambit.lib.libgambit.MixedStrategyProfile,
+    behavior: Any,
     decisions_in_sg: Optional[Union[KeysView[str], Set[str]]] = None,
 ) -> List[StochasticFunctionCPD]:
     """Convert a pygambit behavior strategy to list of CPDs for each decision node.
@@ -199,7 +205,9 @@ def behavior_to_cpd(
         if not infoset:
             return {}
         # get the action probs for the infoset
-        action_probs = {macid.model.domain[node][i]: float(prob) for i, prob in enumerate(behavior[infoset])}
+        action_probs = {
+            macid.model.domain[node][i]: float(behavior[action]) for i, action in enumerate(infoset.actions)
+        }
         return action_probs
 
     def _wrapped_partial(func: Callable, *args: str) -> Callable:
@@ -228,7 +236,7 @@ def _add_players(game: pygambit.Game, agents_in_sg: Iterable[Hashable]) -> Dict[
     """add players to the pygambit game"""
     agent_to_player = {}
     for agent in agents_in_sg:
-        player = game.players.add(agent)
+        player = game.add_player(str(agent))
         agent_to_player[agent] = player
 
     return agent_to_player
@@ -246,11 +254,9 @@ def _add_payoffs(
         cur_node = _get_cur_node(game, node_idx)
         context = node_idx_to_state[node_idx]
         # name outcome as a string of the node_idx
-        payoff_tuple = game.outcomes.add(str(node_idx))
-        for i, agent in enumerate(agents_in_sg):
-            payoff = macid.expected_utility(context=context, agent=agent)
-            payoff_tuple[i] = pygambit.Decimal(payoff)
-        cur_node.outcome = payoff_tuple
+        payoffs = [_exact(macid.expected_utility(context=context, agent=agent)) for agent in agents_in_sg]
+        outcome = game.add_outcome(label=str(node_idx), payoffs=payoffs)
+        game.set_outcome(cur_node, outcome)
 
     return game
 
@@ -263,5 +269,17 @@ def _get_cur_node(game: pygambit.Game, idx: Tuple[int, ...]) -> pygambit.Node:
         return cur_node
     # traverse the tree
     for i in idx[1:]:
-        cur_node = cur_node.children[i]
+        cur_node = list(cur_node.children)[i]  # children follow the order of the actions
     return cur_node
+
+
+def _exact(x: float) -> Fraction:
+    """Exact rational representation of a float (pygambit works with exact numbers)."""
+    return Fraction(float(x)).limit_denominator(10**12)
+
+
+def _exact_probabilities(values: Iterable[float]) -> List[Fraction]:
+    """Rational probabilities that sum exactly to one, as pygambit requires for chance moves."""
+    probs = [_exact(v) for v in values]
+    probs[-1] = Fraction(1) - sum(probs[:-1], Fraction(0))
+    return probs
